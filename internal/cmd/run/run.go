@@ -1,9 +1,13 @@
 package run
 
 import (
+	"context"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"log"
+	"net/http"
 	"tekton-exporter/internal/globals"
 	"tekton-exporter/internal/kubernetes"
+	"tekton-exporter/internal/metrics"
 
 	"github.com/spf13/cobra"
 )
@@ -14,8 +18,12 @@ const (
 	descriptionLong = `
 	Run execute metrics analyzer`
 
-	LogLevelFlagErrorMessage     = "impossible to get flag --log-level: %s"
-	DisableTraceFlagErrorMessage = "impossible to get flag --disable-trace: %s"
+	LogLevelFlagErrorMessage        = "impossible to get flag --log-level: %s"
+	DisableTraceFlagErrorMessage    = "impossible to get flag --disable-trace: %s"
+	MetricsPortFlagErrorMessage     = "impossible to get flag --metrics-port: %s"
+	MetricsHostFlagErrorMessage     = "impossible to get flag --metrics-host: %s"
+	MetricsWebserverErrorMessage    = "imposible to launch metrics webserver: %s"
+	PopulatedLabelsFlagErrorMessage = "impossible to get flag --populated-labels: %s"
 )
 
 func NewCommand() *cobra.Command {
@@ -31,23 +39,14 @@ func NewCommand() *cobra.Command {
 	//
 	cmd.Flags().String("log-level", "info", "Verbosity level for logs")
 	cmd.Flags().Bool("disable-trace", false, "Disable showing traces in logs")
+
+	cmd.Flags().String("metrics-port", "2112", "Port where metrics web-server will run")
+	cmd.Flags().String("metrics-host", "0.0.0.0", "Host where metrics web-server will run")
+
+	cmd.Flags().StringSlice("populated-labels", []string{}, "Comma-separated list of labels populated on metrics")
+
 	// Automatically watched by 'kubernetes' package:
 	//cmd.Flags().String("kubeconfig", "", "Path to kubeconfig")
-
-	//
-	//cmd.Flags().String("grafana-url", "", "Grafana URL to send requests (https://example.com:8080)")
-	//cmd.Flags().String("grafana-auth-token", "", "Grafana API token")
-
-	//cmd.Flags().String("prometheus-url", "", "Prometheus URL to send requests (https://example.com:9090)")
-	//cmd.Flags().Bool("use-mimir-endpoint", false, "Use Grafana Mimir endpoint instead of pure Prometheus")
-	//cmd.Flags().String("mimir-tenant", "", "Select a tenant on Grafana Mimir")
-
-	//
-	//cmd.Flags().Bool("show-not-ingested-metrics", false, "Enable showing used-but-not-ingested metrics")
-	//cmd.Flags().Bool("show-not-used-metrics", false, "Enable showing ingested unused metrics")
-
-	//cmd.Flags().Bool("not-ingested-exclude-dashboards", false, "Exclude Grafana dashboards from used-but-not-ingested analysis")
-	//cmd.Flags().Bool("not-ingested-exclude-rules", false, "Exclude Prometheus rules from used-but-not-ingested analysis")
 
 	// Set flags conditions
 	//cmd.MarkFlagRequired("prometheus-url")
@@ -61,6 +60,8 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
+// RunCommand TODO
+// Ref: https://pkg.go.dev/github.com/spf13/pflag#StringSlice
 func RunCommand(cmd *cobra.Command, args []string) {
 
 	// Init the logger
@@ -79,21 +80,47 @@ func RunCommand(cmd *cobra.Command, args []string) {
 		log.Fatal(err)
 	}
 
-	client, err := kubernetes.NewClient()
-	_, err = kubernetes.GetAllPipelineRuns(globals.ExecContext.Context, client)
-
-	//log.Print(recursos)
-
 	// TODO
-	//prometheusUrlFlag, err := cmd.Flags().GetString("prometheus-url")
-	//if err != nil {
-	//	globals.ExecContext.Logger.Fatalf(PrometheusUrlFlagErrorMessage, err)
-	//}
+	metricsPortFlag, err := cmd.Flags().GetString("metrics-port")
+	if err != nil {
+		log.Fatalf(MetricsPortFlagErrorMessage, err)
+	}
 
-	//useMimirEndpointFlag, err := cmd.Flags().GetBool("use-mimir-endpoint")
-	//if err != nil {
-	//	globals.ExecContext.Logger.Fatalf(UseMimirEndpointFlagErrorMessage, err)
-	//}
+	metricsHostFlag, err := cmd.Flags().GetString("metrics-host")
+	if err != nil {
+		log.Fatalf(MetricsHostFlagErrorMessage, err)
+	}
 
-	//globals.ExecContext.Logger.Infow("results", zap.Any("data", resultingMetrics))
+	populatedLabelsFlag, err := cmd.Flags().GetStringSlice("populated-labels")
+	if err != nil {
+		log.Fatalf(PopulatedLabelsFlagErrorMessage, err)
+	}
+
+	// Store populated labels in context to use them later
+	globals.ExecContext.Context = context.WithValue(globals.ExecContext.Context,
+		"flag-populated-labels", populatedLabelsFlag)
+
+	// TODO: TEST
+	metrics.RegisterMetrics(populatedLabelsFlag)
+	log.Print(metrics.Pool.PipelineRunStatus)
+
+	// Create a Kubernetes client for Unstructured resources (CRs)
+	client, err := kubernetes.NewClient()
+
+	// Process PipelineRun resources in the background
+	// TODO: Errors for watcher must be shown inside the watcher as this is a goroutine
+	go func() {
+		err := kubernetes.WatchPipelineRuns(globals.ExecContext.Context, client)
+		if err != nil {
+
+		}
+	}()
+
+	// Start a webserver for exposing metrics endpoint
+	metricsHost := metricsHostFlag + ":" + metricsPortFlag
+	http.Handle("/metrics", promhttp.Handler())
+	err = http.ListenAndServe(metricsHost, nil)
+	if err != nil {
+		globals.ExecContext.Logger.Fatalf(MetricsWebserverErrorMessage, err)
+	}
 }
