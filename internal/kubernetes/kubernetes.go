@@ -3,18 +3,16 @@ package kubernetes
 import (
 	"context"
 	"fmt"
-	"maps"
-
-	//_ "github.com/coreos/prometheus-operator/pkg/prometheus"
-	prometheus "github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/runtime"
 	"log"
-	"tekton-exporter/internal/metrics"
+	"maps"
 
 	// Kubernetes clients
-	// Ref: https://pkg.go.dev/k8s.io/client-go/discovery
-	"k8s.io/client-go/dynamic"            // Ref: https://pkg.go.dev/k8s.io/client-go/dynamic
-	ctrl "sigs.k8s.io/controller-runtime" // Ref: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/client/config
+	// Ref: https://pkg.go.dev/k8s.io/client-go/dynamic
+	"k8s.io/client-go/dynamic"
+	// Ref: https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/client/config
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	// Kubernetes types
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,6 +22,7 @@ import (
 
 	//
 	"tekton-exporter/internal/globals"
+	"tekton-exporter/internal/metrics"
 )
 
 func NewClient() (client *dynamic.DynamicClient, err error) {
@@ -102,10 +101,21 @@ func WatchPipelineRuns(ctx context.Context, client *dynamic.DynamicClient) (err 
 
 		log.Print("Event on the door") // TODO: Debug Purposes
 		// Convert the runtime.Object to unstructured.Unstructured for convenience
-		// pipelineRunObject, err := runtime.DefaultUnstructuredConverter.ToUnstructured(pipelineRunEvent.Object)
-		// if err != nil {
-		// 	return err
-		// }
+		//pipelineRunObject, err := runtime.DefaultUnstructuredConverter.ToUnstructured(pipelineRunEvent.Object)
+		//if err != nil {
+		//	return err
+		//}
+
+		// LETS INSPECT THE STATUS GetObjectCondition
+		condition, err := GetObjectCondition(&pipelineRunEvent.Object, "Succeeded")
+		if err != nil {
+			return err
+		}
+		log.Print(condition["type"])
+		log.Print(condition["status"])
+		log.Print(condition["reason"])
+
+		/////////////////////////////////////////
 
 		// Read labels from event's resource and merge them with
 		populatedLabels, _ = GetObjectPopulatedLabels(ctx, &pipelineRunEvent.Object)
@@ -197,10 +207,10 @@ func GetObjectPopulatedLabels(ctx context.Context, object *runtime.Object) (labe
 	for _, labelName := range populatedLabelsFlag {
 
 		// Honor all labels when wildcard is passed
-		if len(populatedLabelsFlag) == 1 && labelName == "*" {
-			populatedLabels = objectLabels
-			break
-		}
+		//if len(populatedLabelsFlag) == 1 && labelName == "*" {
+		//	populatedLabels = objectLabels
+		//	break
+		//}
 
 		// Fill only user's requested labels
 		if _, objectLabelsFound := objectLabels[labelName]; objectLabelsFound {
@@ -209,4 +219,28 @@ func GetObjectPopulatedLabels(ctx context.Context, object *runtime.Object) (labe
 	}
 
 	return populatedLabels, nil
+}
+
+// GetObjectCondition TODO
+func GetObjectCondition(obj *runtime.Object, conditionType string) (condition map[string]interface{}, err error) {
+
+	// Convert the runtime.Object to unstructured.Unstructured for convenience
+	pipelineRunObject, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+	if err != nil {
+		return condition, err
+	}
+
+	prObjectStatus := pipelineRunObject["status"].(map[string]interface{})
+	prObjectStatusConditions := prObjectStatus["conditions"].([]interface{})
+
+	for _, currentCondition := range prObjectStatusConditions {
+		currentConditionMap := currentCondition.(map[string]interface{})
+
+		if currentConditionMap["type"] == conditionType {
+			condition = currentConditionMap
+			break
+		}
+	}
+
+	return condition, nil
 }
