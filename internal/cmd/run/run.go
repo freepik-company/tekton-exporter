@@ -45,9 +45,14 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().String("metrics-port", "2112", "Port where metrics web-server will run")
 	cmd.Flags().String("metrics-host", "0.0.0.0", "Host where metrics web-server will run")
 
+	// This flag is directly defined and used by client-go.
+	// It's declared here for documentation purposes only
+	cmd.Flags().String("kubeconfig", "~/.kube/config", "Path to the kubeconfig file")
+
 	cmd.Flags().StringSlice("populated-labels", []string{}, "Comma-separated list of labels populated on metrics")
-	cmd.Flags().Bool("watch-all-namespaces", false, "Enable watching resources on all namespaces")
-	cmd.Flags().String("watch-namespace", "default", "Namespace to watch")
+
+	//cmd.Flags().Bool("watch-all-namespaces", false, "Enable watching resources on all namespaces")
+	//cmd.Flags().String("watch-namespace", "default", "Namespace to watch")
 
 	// Conditions
 	//cmd.MarkFlagsOneRequired("watch-all-namespaces", "watch-namespace")
