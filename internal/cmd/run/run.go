@@ -100,9 +100,8 @@ func RunCommand(cmd *cobra.Command, args []string) {
 	globals.ExecContext.Context = context.WithValue(globals.ExecContext.Context,
 		"flag-populated-labels", populatedLabelsFlag)
 
-	// TODO: TEST
+	// Register metrics into Prometheus Registry
 	metrics.RegisterMetrics(populatedLabelsFlag)
-	log.Print(metrics.Pool.PipelineRunStatus)
 
 	// Create a Kubernetes client for Unstructured resources (CRs)
 	client, err := kubernetes.NewClient()
@@ -111,6 +110,15 @@ func RunCommand(cmd *cobra.Command, args []string) {
 	// TODO: Errors for watcher must be shown inside the watcher as this is a goroutine
 	go func() {
 		err := kubernetes.WatchPipelineRuns(globals.ExecContext.Context, client)
+		if err != nil {
+
+		}
+	}()
+
+	// Process TaskRun resources in the background
+	// TODO: Errors for watcher must be shown inside the watcher as this is a goroutine
+	go func() {
+		err := kubernetes.WatchTaskRuns(globals.ExecContext.Context, client)
 		if err != nil {
 
 		}

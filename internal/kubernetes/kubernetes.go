@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
 	"log"
 	"maps"
+	"strings"
 
 	// Kubernetes clients
 	// Ref: https://pkg.go.dev/k8s.io/client-go/dynamic
@@ -23,6 +25,10 @@ import (
 	//
 	"tekton-exporter/internal/globals"
 	"tekton-exporter/internal/metrics"
+)
+
+const (
+	name = "dskljlkds"
 )
 
 func NewClient() (client *dynamic.DynamicClient, err error) {
@@ -96,7 +102,6 @@ func WatchPipelineRuns(ctx context.Context, client *dynamic.DynamicClient) (err 
 		return err
 	}
 
-	counter := 0 // TODO: Debug Purposes
 	for pipelineRunEvent := range pipelineRunWatcher.ResultChan() {
 
 		log.Print("Event on the door") // TODO: Debug Purposes
@@ -106,57 +111,116 @@ func WatchPipelineRuns(ctx context.Context, client *dynamic.DynamicClient) (err 
 		//	return err
 		//}
 
-		// LETS INSPECT THE STATUS GetObjectCondition
+		// Obtain the status of 'Succeeded' condition type
 		condition, err := GetObjectCondition(&pipelineRunEvent.Object, "Succeeded")
 		if err != nil {
 			return err
 		}
-		log.Print(condition["type"])
-		log.Print(condition["status"])
-		log.Print(condition["reason"])
 
-		/////////////////////////////////////////
+		// Make the status label understandable on the metrics using it
+		pipelineRunStatusMetricLabelStatus := "failed"
+		pipelineRunStatusMetricLabelStatusValue := 0
+		if strings.ToLower(condition["status"].(string)) == "true" {
+			pipelineRunStatusMetricLabelStatus = "success"
+			pipelineRunStatusMetricLabelStatusValue = 1
+		}
+
+		objectBasicData, err := GetObjectBasicData(&pipelineRunEvent.Object)
 
 		// Read labels from event's resource and merge them with
 		populatedLabels, _ = GetObjectPopulatedLabels(ctx, &pipelineRunEvent.Object)
-
-		switch pipelineRunEvent.Type {
-		// TODO
-		case watch.Added, watch.Modified:
-			log.Print("Added or Modified") // TODO: Debug Purposes
-
-			// TODO: Research the status and the reason to set the labels properly
-			calculatedLabels = map[string]string{
-				"status": "failed",
-				"reason": "joe",
-			}
-
-			log.Print("/Added or Modified") // TODO: Debug Purposes
-
-		// TODO
-		case watch.Deleted:
-			log.Print("Deleted")  // TODO: Debug Purposes
-			log.Print("/Deleted") // TODO: Debug Purposes
+		calculatedLabels = map[string]string{
+			"name":   objectBasicData["name"].(string),
+			"status": pipelineRunStatusMetricLabelStatus,
+			"reason": condition["reason"].(string),
 		}
 
-		// Prepare labels result
+		// Prepare labels for Promauto SDK
 		maps.Copy(populatedLabels, calculatedLabels)
 		metricsLabels := prometheus.Labels(populatedLabels)
-		log.Print(populatedLabels)
 
-		// TODO
-		pepon := float64(counter) // TODO: Debug Purposes
-		//prometheus.MPipelineRunStatus.WithLabelValues("pepito").Set(pepon)
-		metrics.Pool.PipelineRunStatus.With(metricsLabels).Set(pepon)
-
-		counter++                       // TODO: Debug Purposes
-		log.Print("/Event on the door") // TODO: Debug Purposes
+		switch pipelineRunEvent.Type {
+		case watch.Added, watch.Modified:
+			globals.ExecContext.Logger.With(zap.Any("labels", metricsLabels)).
+				Info("a PipelineRun resource has been created. Exposing...")
+			metrics.Pool.PipelineRunStatus.With(metricsLabels).Set(float64(pipelineRunStatusMetricLabelStatusValue))
+		case watch.Deleted:
+			collectorDeleted := metrics.Pool.TaskRunStatus.Delete(metricsLabels)
+			if collectorDeleted {
+				globals.ExecContext.Logger.With(zap.Any("labels", metricsLabels)).
+					Info("a PipelineRun resource has been deleted. Cleaning...")
+			}
+		}
 	}
 
 	return nil
 }
 
-// GetObjectLabels TODO return all the labels from an object of type runtime.Object
+// WatchTaskRuns TODO
+func WatchTaskRuns(ctx context.Context, client *dynamic.DynamicClient) (err error) {
+
+	populatedLabels := map[string]string{}
+	calculatedLabels := map[string]string{}
+
+	//globals.ExecContext.Logger.Info("Watching PipelineRun objects")
+	resourceId := schema.GroupVersionResource{
+		Group:    "tekton.dev",
+		Version:  "v1",
+		Resource: "taskruns",
+	}
+
+	// TODO: Delete the namespace once the controller is fully working
+	taskRunWatcher, err := client.Resource(resourceId).Namespace("freeclip").Watch(ctx, metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+
+	for taskRunEvent := range taskRunWatcher.ResultChan() {
+
+		// Obtain the status of 'Succeeded' condition type
+		condition, err := GetObjectCondition(&taskRunEvent.Object, "Succeeded")
+		if err != nil {
+			return err
+		}
+
+		// Make the status label understandable on the metrics using it
+		taskRunStatusMetricLabelStatus := "failed"
+		taskRunStatusMetricLabelStatusValue := 0
+		if strings.ToLower(condition["status"].(string)) == "true" {
+			taskRunStatusMetricLabelStatus = "success"
+			taskRunStatusMetricLabelStatusValue = 1
+		}
+
+		objectBasicData, err := GetObjectBasicData(&taskRunEvent.Object)
+
+		// Read labels from event's resource and merge them with
+		populatedLabels, _ = GetObjectPopulatedLabels(ctx, &taskRunEvent.Object)
+		calculatedLabels = map[string]string{
+			"name":   objectBasicData["name"].(string),
+			"status": taskRunStatusMetricLabelStatus,
+			"reason": condition["reason"].(string),
+		}
+
+		// Prepare labels for Promauto SDK
+		maps.Copy(populatedLabels, calculatedLabels)
+		metricsLabels := prometheus.Labels(populatedLabels)
+
+		switch taskRunEvent.Type {
+		case watch.Added, watch.Modified:
+			metrics.Pool.TaskRunStatus.With(metricsLabels).Set(float64(taskRunStatusMetricLabelStatusValue))
+		case watch.Deleted:
+			collectorDeleted := metrics.Pool.TaskRunStatus.Delete(metricsLabels)
+			if collectorDeleted {
+				globals.ExecContext.Logger.With(zap.Any("labels", metricsLabels)).
+					Info("a TaskRun resource has been deleted. Cleaning...")
+			}
+		}
+	}
+
+	return nil
+}
+
+// GetObjectLabels return all the labels from an object of type runtime.Object
 func GetObjectLabels(obj *runtime.Object) (labelsMap map[string]string, err error) {
 
 	// Convert the runtime.Object to unstructured.Unstructured for convenience
@@ -204,24 +268,24 @@ func GetObjectPopulatedLabels(ctx context.Context, object *runtime.Object) (labe
 	// TODO
 	populatedLabels := map[string]string{}
 	populatedLabelsFlag := ctx.Value("flag-populated-labels").([]string)
+
+	//
+	parsedLabelsMap, _ := metrics.GetProcessedLabels(populatedLabelsFlag) // TODO: Handle error
 	for _, labelName := range populatedLabelsFlag {
 
-		// Honor all labels when wildcard is passed
-		//if len(populatedLabelsFlag) == 1 && labelName == "*" {
-		//	populatedLabels = objectLabels
-		//	break
-		//}
-
 		// Fill only user's requested labels
+		// Label names will be changed to a Prometheus compatible syntax
 		if _, objectLabelsFound := objectLabels[labelName]; objectLabelsFound {
-			populatedLabels[labelName] = objectLabels[labelName]
+			populatedLabels[parsedLabelsMap[labelName]] = objectLabels[labelName]
 		}
 	}
+
+	log.Print(populatedLabels)
 
 	return populatedLabels, nil
 }
 
-// GetObjectCondition TODO
+// GetObjectCondition return selected condition type from an object of type runtime.Object
 func GetObjectCondition(obj *runtime.Object, conditionType string) (condition map[string]interface{}, err error) {
 
 	// Convert the runtime.Object to unstructured.Unstructured for convenience
@@ -243,4 +307,22 @@ func GetObjectCondition(obj *runtime.Object, conditionType string) (condition ma
 	}
 
 	return condition, nil
+}
+
+// GetObjectBasicData return basic data (name, namespace) from an object of type runtime.Object
+func GetObjectBasicData(obj *runtime.Object) (objectData map[string]interface{}, err error) {
+
+	// Convert the runtime.Object to unstructured.Unstructured for convenience
+	pipelineRunObject, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+	if err != nil {
+		return objectData, err
+	}
+
+	objectData = make(map[string]interface{})
+
+	objectMetadata := pipelineRunObject["metadata"]
+	objectData["name"] = objectMetadata.(map[string]interface{})["name"]
+	objectData["namespace"] = objectMetadata.(map[string]interface{})["namespace"]
+
+	return objectData, nil
 }
