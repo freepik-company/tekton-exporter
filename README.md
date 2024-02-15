@@ -1,6 +1,6 @@
 # Tekton Exporter
 
-<img src="https://raw.githubusercontent.com/achetronic/tekton-exporter/master/docs/img/logo.png" alt="Tekton Exporter Logo (Main) logo." width="150">
+<img src="https://raw.githubusercontent.com/freepik-company/tekton-exporter/master/docs/img/logo.png" alt="Tekton Exporter Logo (Main) logo." width="150">
 
 ![GitHub go.mod Go version (subdirectory of monorepo)](https://img.shields.io/github/go-mod/go-version/achetronic/tekton-exporter)
 ![GitHub](https://img.shields.io/github/license/achetronic/tekton-exporter)
@@ -8,7 +8,8 @@
 ![YouTube Channel Subscribers](https://img.shields.io/youtube/channel/subscribers/UCeSb3yfsPNNVr13YsYNvCAw?label=achetronic&link=http%3A%2F%2Fyoutube.com%2Fachetronic)
 ![X (formerly Twitter) Follow](https://img.shields.io/twitter/follow/achetronic?style=flat&logo=twitter&link=https%3A%2F%2Ftwitter.com%2Fachetronic)
 
-A CLI to TODOOOOOOOO
+A Prometheus Exporter to collect and expose some useful fine-grained Tekton metrics
+that are not exposed natively
 
 ## Motivation
 
@@ -19,11 +20,14 @@ TODO
 Every configuration parameter can be defined by flags that can be passed to the CLI.
 They are described in the following table:
 
-| Name              | Description                      | Default Example |                                 |
-|:------------------|:---------------------------------|:---------------:|---------------------------------|
-| `--log-level`     | Define the verbosity of the logs |     `info`      | `--log-level info`              |
-| `--disable-trace` | Disable traces from logs         |     `false`     | `--disable-trace true`          |
-| `--kubeconfig`    | Path to kubeconfig               |       `-`       | `--kubeconfig="~/.kube/config"` |
+| Name                 | Description                                         | Default Example |                                                            |
+|:---------------------|:----------------------------------------------------|:---------------:|------------------------------------------------------------|
+| `--log-level`        | Define the verbosity of the logs                    |     `info`      | `--log-level info`                                         |
+| `--disable-trace`    | Disable traces from logs                            |     `false`     | `--disable-trace true`                                     |
+| `--kubeconfig`       | Path to kubeconfig                                  |       `-`       | `--kubeconfig="~/.kube/config"`                            |   
+| `--metrics-port`     | Port where metrics web-server will run              |     `2112`      | `--metrics-port 9090`                                      |
+| `--metrics-host`     | Host where metrics web-server will run              |    `0.0.0.0`    | `--metrics-host 10.10.10.1`                                |
+| `--populated-labels` | Comma-separated list of labels populated on metrics |       `-`       | `--populated-labels "apiVersion,pipelineName,projectName"` |
 
 ## Examples
 
@@ -46,11 +50,11 @@ This project provides binary files and Docker images to make it easy to use wher
 
 ### Binaries
 
-Binary files for the most popular platforms will be added to the [releases](https://github.com/achetronic/tekton-exporter/releases)
+Binary files for the most popular platforms will be added to the [releases](https://github.com/freepik-company/tekton-exporter/releases)
 
 ### Docker
 
-Docker images can be found in GitHub's [packages](https://github.com/achetronic/tekton-exporter/pkgs/container/tekton-exporter)
+Docker images can be found in GitHub's [packages](https://github.com/freepik-company/tekton-exporter/pkgs/container/tekton-exporter)
 related to this repository
 
 > Do you need it in a different container registry? We think this is not needed, but if we're wrong, please, let's discuss
