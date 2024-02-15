@@ -6,7 +6,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
-	"log"
 	"maps"
 	"strings"
 
@@ -25,10 +24,6 @@ import (
 	//
 	"tekton-exporter/internal/globals"
 	"tekton-exporter/internal/metrics"
-)
-
-const (
-	name = "dskljlkds"
 )
 
 func NewClient() (client *dynamic.DynamicClient, err error) {
@@ -78,7 +73,8 @@ func GetAllPipelineRuns(ctx context.Context, client *dynamic.DynamicClient) (res
 	}
 
 	list, err := client.Resource(resourceId).Namespace("freeclip").List(ctx, metav1.ListOptions{})
-	log.Print(list.Items[0])
+	_ = list
+	//log.Print(list.Items[0])
 
 	return resources, nil
 }
@@ -96,20 +92,13 @@ func WatchPipelineRuns(ctx context.Context, client *dynamic.DynamicClient) (err 
 		Resource: "pipelineruns",
 	}
 
-	// TODO: Delete the namespace once the controller is fully working
-	pipelineRunWatcher, err := client.Resource(resourceId).Namespace("freeclip").Watch(ctx, metav1.ListOptions{})
+	// TODO
+	pipelineRunWatcher, err := client.Resource(resourceId).Watch(ctx, metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
 
 	for pipelineRunEvent := range pipelineRunWatcher.ResultChan() {
-
-		log.Print("Event on the door") // TODO: Debug Purposes
-		// Convert the runtime.Object to unstructured.Unstructured for convenience
-		//pipelineRunObject, err := runtime.DefaultUnstructuredConverter.ToUnstructured(pipelineRunEvent.Object)
-		//if err != nil {
-		//	return err
-		//}
 
 		// Obtain the status of 'Succeeded' condition type
 		condition, err := GetObjectCondition(&pipelineRunEvent.Object, "Succeeded")
@@ -145,7 +134,7 @@ func WatchPipelineRuns(ctx context.Context, client *dynamic.DynamicClient) (err 
 				Info("a PipelineRun resource has been created. Exposing...")
 			metrics.Pool.PipelineRunStatus.With(metricsLabels).Set(float64(pipelineRunStatusMetricLabelStatusValue))
 		case watch.Deleted:
-			collectorDeleted := metrics.Pool.TaskRunStatus.Delete(metricsLabels)
+			collectorDeleted := metrics.Pool.PipelineRunStatus.Delete(metricsLabels)
 			if collectorDeleted {
 				globals.ExecContext.Logger.With(zap.Any("labels", metricsLabels)).
 					Info("a PipelineRun resource has been deleted. Cleaning...")
@@ -207,6 +196,8 @@ func WatchTaskRuns(ctx context.Context, client *dynamic.DynamicClient) (err erro
 
 		switch taskRunEvent.Type {
 		case watch.Added, watch.Modified:
+			globals.ExecContext.Logger.With(zap.Any("labels", metricsLabels)).
+				Info("a TaskRun resource has been created. Exposing...")
 			metrics.Pool.TaskRunStatus.With(metricsLabels).Set(float64(taskRunStatusMetricLabelStatusValue))
 		case watch.Deleted:
 			collectorDeleted := metrics.Pool.TaskRunStatus.Delete(metricsLabels)
@@ -279,8 +270,6 @@ func GetObjectPopulatedLabels(ctx context.Context, object *runtime.Object) (labe
 			populatedLabels[parsedLabelsMap[labelName]] = objectLabels[labelName]
 		}
 	}
-
-	log.Print(populatedLabels)
 
 	return populatedLabels, nil
 }

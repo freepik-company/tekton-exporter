@@ -24,6 +24,8 @@ const (
 	MetricsHostFlagErrorMessage     = "impossible to get flag --metrics-host: %s"
 	MetricsWebserverErrorMessage    = "imposible to launch metrics webserver: %s"
 	PopulatedLabelsFlagErrorMessage = "impossible to get flag --populated-labels: %s"
+	//WatchAllNamespacesFlagErrorMessage = "impossible to get flag --watch-all-namespaces: %s"
+	//WatchNamespaceFlagErrorMessage     = "impossible to get flag --watch-namespace: %s"
 )
 
 func NewCommand() *cobra.Command {
@@ -44,18 +46,12 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().String("metrics-host", "0.0.0.0", "Host where metrics web-server will run")
 
 	cmd.Flags().StringSlice("populated-labels", []string{}, "Comma-separated list of labels populated on metrics")
+	cmd.Flags().Bool("watch-all-namespaces", false, "Enable watching resources on all namespaces")
+	cmd.Flags().String("watch-namespace", "default", "Namespace to watch")
 
-	// Automatically watched by 'kubernetes' package:
-	//cmd.Flags().String("kubeconfig", "", "Path to kubeconfig")
-
-	// Set flags conditions
-	//cmd.MarkFlagRequired("prometheus-url")
-	//cmd.MarkFlagRequired("grafana-url")
-	//cmd.MarkFlagRequired("grafana-auth-token")
-	//cmd.MarkFlagsRequiredTogether("use-mimir-endpoint", "mimir-tenant")
-	//cmd.MarkFlagsOneRequired("show-not-ingested-metrics", "show-not-used-metrics")
-	//cmd.MarkFlagsMutuallyExclusive("show-not-ingested-metrics", "show-not-used-metrics")
-	//cmd.MarkFlagsMutuallyExclusive("not-ingested-exclude-dashboards", "not-ingested-exclude-rules")
+	// Conditions
+	//cmd.MarkFlagsOneRequired("watch-all-namespaces", "watch-namespace")
+	//cmd.MarkFlagsMutuallyExclusive("watch-all-namespaces", "watch-namespace")
 
 	return cmd
 }
@@ -96,9 +92,23 @@ func RunCommand(cmd *cobra.Command, args []string) {
 		log.Fatalf(PopulatedLabelsFlagErrorMessage, err)
 	}
 
+	//watchAllNamespacesFlag, err := cmd.Flags().GetBool("watch-all-namespaces")
+	//if err != nil {
+	//	log.Fatalf(WatchAllNamespacesFlagErrorMessage, err)
+	//}
+	//
+	//watchNamespaceFlag, err := cmd.Flags().GetString("watch-namespace")
+	//if err != nil {
+	//	log.Fatalf(WatchNamespaceFlagErrorMessage, err)
+	//}
+
 	// Store populated labels in context to use them later
 	globals.ExecContext.Context = context.WithValue(globals.ExecContext.Context,
 		"flag-populated-labels", populatedLabelsFlag)
+	//globals.ExecContext.Context = context.WithValue(globals.ExecContext.Context,
+	//	"flag-watch-all-namespaces", watchAllNamespacesFlag)
+	//globals.ExecContext.Context = context.WithValue(globals.ExecContext.Context,
+	//	"flag-watch-namespace", watchNamespaceFlag)
 
 	// Register metrics into Prometheus Registry
 	metrics.RegisterMetrics(populatedLabelsFlag)
