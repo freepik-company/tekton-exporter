@@ -7,6 +7,7 @@ import (
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
 	"maps"
+	"reflect"
 	"strings"
 
 	// Kubernetes clients
@@ -106,6 +107,16 @@ func WatchPipelineRuns(ctx context.Context, client *dynamic.DynamicClient) (err 
 			return err
 		}
 
+		// TODO: Should we manage this or make it fail??
+		if condition == nil {
+			globals.ExecContext.Logger.Info("a PipelineRun has nil condition?")
+			condition = map[string]interface{}{
+				"type":   "Succeeded",
+				"status": "False",
+				"reason": "Unknown",
+			}
+		}
+
 		// Make the status label understandable on the metrics using it
 		pipelineRunStatusMetricLabelStatus := "failed"
 		pipelineRunStatusMetricLabelStatusValue := 0
@@ -129,10 +140,30 @@ func WatchPipelineRuns(ctx context.Context, client *dynamic.DynamicClient) (err 
 		metricsLabels := prometheus.Labels(populatedLabels)
 
 		switch pipelineRunEvent.Type {
-		case watch.Added, watch.Modified:
+		case watch.Added:
 			globals.ExecContext.Logger.With(zap.Any("labels", metricsLabels)).
 				Info("a PipelineRun resource has been created. Exposing...")
 			metrics.Pool.PipelineRunStatus.With(metricsLabels).Set(float64(pipelineRunStatusMetricLabelStatusValue))
+
+		case watch.Modified:
+			globals.ExecContext.Logger.With(zap.Any("labels", metricsLabels)).
+				Info("a PipelineRun resource has been modified. Exchanging it...")
+
+			// Generate labels that partially match
+			// Maps in golang are ReferenceTypes, so we need to iterate to copy
+			partialMetricLabels := prometheus.Labels{}
+			for k, v := range metricsLabels {
+				partialMetricLabels[k] = v
+			}
+			delete(partialMetricLabels, "status")
+			delete(partialMetricLabels, "reason")
+
+			// Delete metrics that match partial labels
+			_ = metrics.Pool.PipelineRunStatus.DeletePartialMatch(partialMetricLabels)
+
+			// Regenerate the metric with newer labels
+			metrics.Pool.PipelineRunStatus.With(metricsLabels).Set(float64(pipelineRunStatusMetricLabelStatusValue))
+
 		case watch.Deleted:
 			collectorDeleted := metrics.Pool.PipelineRunStatus.Delete(metricsLabels)
 			if collectorDeleted {
@@ -195,10 +226,30 @@ func WatchTaskRuns(ctx context.Context, client *dynamic.DynamicClient) (err erro
 		metricsLabels := prometheus.Labels(populatedLabels)
 
 		switch taskRunEvent.Type {
-		case watch.Added, watch.Modified:
+		case watch.Added:
 			globals.ExecContext.Logger.With(zap.Any("labels", metricsLabels)).
 				Info("a TaskRun resource has been created. Exposing...")
 			metrics.Pool.TaskRunStatus.With(metricsLabels).Set(float64(taskRunStatusMetricLabelStatusValue))
+
+		case watch.Modified:
+			globals.ExecContext.Logger.With(zap.Any("labels", metricsLabels)).
+				Info("a TaskRun resource has been modified. Exchanging it...")
+
+			// Generate labels that partially match
+			// Maps in golang are ReferenceTypes, so we need to iterate to copy
+			partialMetricLabels := prometheus.Labels{}
+			for k, v := range metricsLabels {
+				partialMetricLabels[k] = v
+			}
+			delete(partialMetricLabels, "status")
+			delete(partialMetricLabels, "reason")
+
+			// Delete metrics that match partial labels
+			_ = metrics.Pool.TaskRunStatus.DeletePartialMatch(partialMetricLabels)
+
+			// Regenerate the metric with newer labels
+			metrics.Pool.TaskRunStatus.With(metricsLabels).Set(float64(taskRunStatusMetricLabelStatusValue))
+
 		case watch.Deleted:
 			collectorDeleted := metrics.Pool.TaskRunStatus.Delete(metricsLabels)
 			if collectorDeleted {
@@ -262,12 +313,16 @@ func GetObjectPopulatedLabels(ctx context.Context, object *runtime.Object) (labe
 
 	//
 	parsedLabelsMap, _ := metrics.GetProcessedLabels(populatedLabelsFlag) // TODO: Handle error
-	for _, labelName := range populatedLabelsFlag {
+	for _, populatedLabelName := range populatedLabelsFlag {
+
+		// Populated labels are dynamic, but labels must be pre-registered on Prometheus SDK
+		// This is a mechanism to avoid crashes if the labels are not present in the object
+		populatedLabels[parsedLabelsMap[populatedLabelName]] = "#"
 
 		// Fill only user's requested labels
 		// Label names will be changed to a Prometheus compatible syntax
-		if _, objectLabelsFound := objectLabels[labelName]; objectLabelsFound {
-			populatedLabels[parsedLabelsMap[labelName]] = objectLabels[labelName]
+		if _, objectLabelsFound := objectLabels[populatedLabelName]; objectLabelsFound {
+			populatedLabels[parsedLabelsMap[populatedLabelName]] = objectLabels[populatedLabelName]
 		}
 	}
 
@@ -283,9 +338,17 @@ func GetObjectCondition(obj *runtime.Object, conditionType string) (condition ma
 		return condition, err
 	}
 
-	prObjectStatus := pipelineRunObject["status"].(map[string]interface{})
-	prObjectStatusConditions := prObjectStatus["conditions"].([]interface{})
+	if reflect.TypeOf(pipelineRunObject["status"]) == nil {
+		return condition, nil
+	}
 
+	prObjectStatus := pipelineRunObject["status"].(map[string]interface{})
+	if reflect.TypeOf(prObjectStatus["conditions"]) == nil {
+		return condition, nil
+	}
+
+	//
+	prObjectStatusConditions := prObjectStatus["conditions"].([]interface{})
 	for _, currentCondition := range prObjectStatusConditions {
 		currentConditionMap := currentCondition.(map[string]interface{})
 

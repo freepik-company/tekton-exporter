@@ -9,6 +9,6 @@ import (
 func main() {
 	baseName := filepath.Base(os.Args[0])
 
-	err := cmd.NewMetricosoCommand(baseName).Execute()
+	err := cmd.NewRootCommand(baseName).Execute()
 	cmd.CheckError(err)
 }

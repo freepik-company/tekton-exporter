@@ -16,7 +16,7 @@ const (
 	It exposes non standard (but useful) metrics`
 )
 
-func NewMetricosoCommand(name string) *cobra.Command {
+func NewRootCommand(name string) *cobra.Command {
 	c := &cobra.Command{
 		Use:   name,
 		Short: descriptionShort,

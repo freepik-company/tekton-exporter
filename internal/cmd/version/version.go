@@ -9,7 +9,7 @@ const (
 	descriptionShort = `Print the current version`
 
 	descriptionLong = `
-	Version show the current metricoso version client.`
+	Version show the current tekton-exporter version client.`
 )
 
 func NewCommand() *cobra.Command {

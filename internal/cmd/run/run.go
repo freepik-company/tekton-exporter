@@ -13,10 +13,10 @@ import (
 )
 
 const (
-	descriptionShort = `Execute metrics analyzer`
+	descriptionShort = `Execute metrics exporter`
 
 	descriptionLong = `
-	Run execute metrics analyzer`
+	Run execute metrics exporter`
 
 	LogLevelFlagErrorMessage        = "impossible to get flag --log-level: %s"
 	DisableTraceFlagErrorMessage    = "impossible to get flag --disable-trace: %s"

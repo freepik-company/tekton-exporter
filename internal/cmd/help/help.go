@@ -9,7 +9,7 @@ const (
 
 	descriptionLong = `
 	Help provides help for any command in the application.
-	Simply type metricoso help [path to command] for full details.`
+	Simply type tekton-exporter help [path to command] for full details.`
 )
 
 func NewCommand() *cobra.Command {
