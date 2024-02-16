@@ -4,7 +4,7 @@
 ![GitHub](https://img.shields.io/github/license/freepik-company/tekton-exporter)
 
 ![YouTube Channel Subscribers](https://img.shields.io/youtube/channel/subscribers/UCeSb3yfsPNNVr13YsYNvCAw?label=achetronic&link=http%3A%2F%2Fyoutube.com%2Fachetronic)
-![GitHub followers](https://img.shields.io/github/followers/achetronic)
+![GitHub followers](https://img.shields.io/github/followers/achetronic?label=achetronic&link=http%3A%2F%2Fgithub.com%2Fachetronic)
 ![X (formerly Twitter) Follow](https://img.shields.io/twitter/follow/achetronic?style=flat&logo=twitter&link=https%3A%2F%2Ftwitter.com%2Fachetronic)
 
 A Prometheus Exporter to collect and expose some useful fine-grained Tekton metrics
