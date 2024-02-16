@@ -49,14 +49,7 @@ func NewCommand() *cobra.Command {
 	// It's declared here for documentation purposes only
 	cmd.Flags().String("kubeconfig", "~/.kube/config", "Path to the kubeconfig file")
 
-	cmd.Flags().StringSlice("populated-labels", []string{}, "Comma-separated list of labels populated on metrics")
-
-	//cmd.Flags().Bool("watch-all-namespaces", false, "Enable watching resources on all namespaces")
-	//cmd.Flags().String("watch-namespace", "default", "Namespace to watch")
-
-	// Conditions
-	//cmd.MarkFlagsOneRequired("watch-all-namespaces", "watch-namespace")
-	//cmd.MarkFlagsMutuallyExclusive("watch-all-namespaces", "watch-namespace")
+	cmd.Flags().StringSlice("populated-labels", []string{}, "(Repeatable or comma-separated list) Object labels populated on metrics")
 
 	return cmd
 }
@@ -97,23 +90,15 @@ func RunCommand(cmd *cobra.Command, args []string) {
 		log.Fatalf(PopulatedLabelsFlagErrorMessage, err)
 	}
 
-	//watchAllNamespacesFlag, err := cmd.Flags().GetBool("watch-all-namespaces")
-	//if err != nil {
-	//	log.Fatalf(WatchAllNamespacesFlagErrorMessage, err)
-	//}
-	//
-	//watchNamespaceFlag, err := cmd.Flags().GetString("watch-namespace")
-	//if err != nil {
-	//	log.Fatalf(WatchNamespaceFlagErrorMessage, err)
-	//}
+	// Handle a potentially confusing situation:
+	// Cobra flags' library does not properly parse
+	// comma-separated lists depending on the environment
+	// the CLI is running (i.e. Kubernetes),
+	populatedLabelsFlag = globals.SplitCommaSeparatedValues(populatedLabelsFlag)
 
 	// Store populated labels in context to use them later
 	globals.ExecContext.Context = context.WithValue(globals.ExecContext.Context,
 		"flag-populated-labels", populatedLabelsFlag)
-	//globals.ExecContext.Context = context.WithValue(globals.ExecContext.Context,
-	//	"flag-watch-all-namespaces", watchAllNamespacesFlag)
-	//globals.ExecContext.Context = context.WithValue(globals.ExecContext.Context,
-	//	"flag-watch-namespace", watchNamespaceFlag)
 
 	// Register metrics into Prometheus Registry
 	metrics.RegisterMetrics(populatedLabelsFlag)
@@ -124,7 +109,7 @@ func RunCommand(cmd *cobra.Command, args []string) {
 	// Process PipelineRun resources in the background
 	// TODO: Errors for watcher must be shown inside the watcher as this is a goroutine
 	go func() {
-		err := kubernetes.WatchPipelineRuns(globals.ExecContext.Context, client)
+		err := kubernetes.WatchPipelineRuns(&globals.ExecContext.Context, client)
 		if err != nil {
 
 		}
@@ -133,7 +118,7 @@ func RunCommand(cmd *cobra.Command, args []string) {
 	// Process TaskRun resources in the background
 	// TODO: Errors for watcher must be shown inside the watcher as this is a goroutine
 	go func() {
-		err := kubernetes.WatchTaskRuns(globals.ExecContext.Context, client)
+		err := kubernetes.WatchTaskRuns(&globals.ExecContext.Context, client)
 		if err != nil {
 
 		}

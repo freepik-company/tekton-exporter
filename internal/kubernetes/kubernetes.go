@@ -2,7 +2,6 @@ package kubernetes
 
 import (
 	"context"
-	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -44,7 +43,7 @@ func NewClient() (client *dynamic.DynamicClient, err error) {
 
 // GetNamespaces get a list of all namespaces existing in the cluster
 // TODO: Evaluate if this method is needed
-func GetNamespaces(ctx context.Context, client *dynamic.DynamicClient) (namespaces *unstructured.UnstructuredList, err error) {
+func GetNamespaces(ctx *context.Context, client *dynamic.DynamicClient) (namespaces *unstructured.UnstructuredList, err error) {
 
 	resourceId := schema.GroupVersionResource{
 		Group:    "",
@@ -52,7 +51,7 @@ func GetNamespaces(ctx context.Context, client *dynamic.DynamicClient) (namespac
 		Resource: "namespaces",
 	}
 
-	namespaceList, err := client.Resource(resourceId).List(ctx, metav1.ListOptions{})
+	namespaceList, err := client.Resource(resourceId).List(*ctx, metav1.ListOptions{})
 
 	if err != nil {
 		return namespaces, err
@@ -61,27 +60,8 @@ func GetNamespaces(ctx context.Context, client *dynamic.DynamicClient) (namespac
 	return namespaceList, err
 }
 
-// GetAllPipelineRuns
-// TODO: Evaluate if this method is needed
-func GetAllPipelineRuns(ctx context.Context, client *dynamic.DynamicClient) (resources []unstructured.Unstructured, err error) {
-
-	globals.ExecContext.Logger.Info("pepe")
-
-	resourceId := schema.GroupVersionResource{
-		Group:    "tekton.dev",
-		Version:  "v1",
-		Resource: "pipelineruns",
-	}
-
-	list, err := client.Resource(resourceId).Namespace("freeclip").List(ctx, metav1.ListOptions{})
-	_ = list
-	//log.Print(list.Items[0])
-
-	return resources, nil
-}
-
 // WatchPipelineRuns TODO
-func WatchPipelineRuns(ctx context.Context, client *dynamic.DynamicClient) (err error) {
+func WatchPipelineRuns(ctx *context.Context, client *dynamic.DynamicClient) (err error) {
 
 	populatedLabels := map[string]string{}
 	calculatedLabels := map[string]string{}
@@ -94,7 +74,7 @@ func WatchPipelineRuns(ctx context.Context, client *dynamic.DynamicClient) (err 
 	}
 
 	// TODO
-	pipelineRunWatcher, err := client.Resource(resourceId).Watch(ctx, metav1.ListOptions{})
+	pipelineRunWatcher, err := client.Resource(resourceId).Watch(*ctx, metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -177,7 +157,7 @@ func WatchPipelineRuns(ctx context.Context, client *dynamic.DynamicClient) (err 
 }
 
 // WatchTaskRuns TODO
-func WatchTaskRuns(ctx context.Context, client *dynamic.DynamicClient) (err error) {
+func WatchTaskRuns(ctx *context.Context, client *dynamic.DynamicClient) (err error) {
 
 	populatedLabels := map[string]string{}
 	calculatedLabels := map[string]string{}
@@ -190,7 +170,7 @@ func WatchTaskRuns(ctx context.Context, client *dynamic.DynamicClient) (err erro
 	}
 
 	// TODO: Delete the namespace once the controller is fully working
-	taskRunWatcher, err := client.Resource(resourceId).Namespace("freeclip").Watch(ctx, metav1.ListOptions{})
+	taskRunWatcher, err := client.Resource(resourceId).Namespace("freeclip").Watch(*ctx, metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -278,13 +258,12 @@ func GetObjectLabels(obj *runtime.Object) (labelsMap map[string]string, err erro
 
 	labelsMap = make(map[string]string)
 
-	// Iterar sobre el mapa original y hacer el "casting" de los valores
+	// Iterate over the original map and cast its values
 	for key, value := range objectLabels {
 		strValue, ok := value.(string)
 		if !ok {
-			// Manejo del error si el valor no es un string
-			fmt.Printf("El valor para '%s' no es un string y no puede ser convertido.\n", key)
-			continue // Opcionalmente, puedes decidir cómo manejar este caso.
+			globals.ExecContext.Logger.Infof("Value of label '%s' is not a string. Ignoring it", key)
+			continue
 		}
 		labelsMap[key] = strValue
 	}
@@ -294,7 +273,7 @@ func GetObjectLabels(obj *runtime.Object) (labelsMap map[string]string, err erro
 
 // GetObjectPopulatedLabels return only user's desired labels from an object of type runtime.Object
 // Desired labels are defined by flag "--populated-labels"
-func GetObjectPopulatedLabels(ctx context.Context, object *runtime.Object) (labelsMap map[string]string, err error) {
+func GetObjectPopulatedLabels(ctx *context.Context, object *runtime.Object) (labelsMap map[string]string, err error) {
 
 	// Read labels from event's resource
 	objectLabels, err := GetObjectLabels(object)
@@ -307,9 +286,9 @@ func GetObjectPopulatedLabels(ctx context.Context, object *runtime.Object) (labe
 		return labelsMap, nil
 	}
 
-	// TODO
+	// Recover flag 'populated-labels' from context
 	populatedLabels := map[string]string{}
-	populatedLabelsFlag := ctx.Value("flag-populated-labels").([]string)
+	populatedLabelsFlag := (*ctx).Value("flag-populated-labels").([]string)
 
 	//
 	parsedLabelsMap, _ := metrics.GetProcessedLabels(populatedLabelsFlag) // TODO: Handle error

@@ -15,23 +15,24 @@ that are not exposed natively
 In our platform team, we needed to build some useful dashboards to show our developers the status of the pipelines
 per project to make them compete for the first position on the reliability podium.
 
-There are some metrics that are not exposed to achieve that goal, so we decided to do this little tool
+There are some metrics that are not exposed, which are necessary to achieve our goal, 
+so we decided to create this small tool.
 
 ## Flags
 
 Every configuration parameter can be defined by flags that can be passed to the CLI.
 They are described in the following table:
 
-| Name                 | Description                                         | Default Example |                                                            |
-|:---------------------|:----------------------------------------------------|:---------------:|------------------------------------------------------------|
-| `--log-level`        | Define the verbosity of the logs                    |     `info`      | `--log-level info`                                         |
-| `--disable-trace`    | Disable traces from logs                            |     `false`     | `--disable-trace true`                                     |
-| `--kubeconfig`       | Path to kubeconfig                                  |       `-`       | `--kubeconfig="~/.kube/config"`                            |   
-| `--metrics-port`     | Port where metrics web-server will run              |     `2112`      | `--metrics-port 9090`                                      |
-| `--metrics-host`     | Host where metrics web-server will run              |    `0.0.0.0`    | `--metrics-host 10.10.10.1`                                |
-| `--populated-labels` | Comma-separated list of labels populated on metrics |       `-`       | `--populated-labels "apiVersion,pipelineName,projectName"` |
+| Name                 | Description                                                             | Default Example |                                                            |
+|:---------------------|:------------------------------------------------------------------------|:---------------:|------------------------------------------------------------|
+| `--log-level`        | Define the verbosity of the logs                                        |     `info`      | `--log-level info`                                         |
+| `--disable-trace`    | Disable traces from logs                                                |     `false`     | `--disable-trace true`                                     |
+| `--kubeconfig`       | Path to kubeconfig                                                      |       `-`       | `--kubeconfig="~/.kube/config"`                            |   
+| `--metrics-port`     | Port where metrics web-server will run                                  |     `2112`      | `--metrics-port 9090`                                      |
+| `--metrics-host`     | Host where metrics web-server will run                                  |    `0.0.0.0`    | `--metrics-host 10.10.10.1`                                |
+| `--populated-labels` | (Repeatable or comma-separated list) Object labels populated on metrics |       `-`       | `--populated-labels "apiVersion,pipelineName,projectName"` |
 
-> For Prometheus SDK it is mandatory to register the metrics before using them. 
+> For Prometheus SDK, it is mandatory to register the metrics before using them. 
 > Due to this, if you use `--populated-labels` flag and the label is not present in some PipelineRun or TaskRun
 > the label will be populated with `#` as value
 
