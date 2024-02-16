@@ -1,0 +1,16 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "tekton-exporter.fullname" . }}
+  labels:
+    {{- include "tekton-exporter.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+    - tekton.dev
+    resources:
+    - pipelineruns
+    - taskruns
+    verbs:
+    - get
+    - list
+    - watch

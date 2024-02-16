@@ -1,0 +1,18 @@
+{{- if .Values.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tekton-exporter.fullname" . }}
+  labels:
+    {{- include "tekton-exporter.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      name: metrics
+      protocol: TCP
+      targetPort: metrics
+  selector:
+    {{- include "tekton-exporter.selectorLabels" . | nindent 4 }}
+
+{{- end }}
