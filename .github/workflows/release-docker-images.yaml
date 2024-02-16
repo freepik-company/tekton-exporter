@@ -48,9 +48,10 @@ jobs:
       - name: Build and push
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
-            TAG="${{ github.ref }}"
+            export TAG="${{ github.ref_name }}"
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.release }}"
+            export TAG="${{ inputs.release }}"
           fi
           
-          IMG="ghcr.io/freepik-company/tekton-exporter:$TAG" make docker-buildx
+          export IMG="ghcr.io/freepik-company/tekton-exporter:$TAG" 
+          make docker-buildx
