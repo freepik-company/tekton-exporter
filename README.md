@@ -1,11 +1,10 @@
 # Tekton Exporter
 
-<img src="https://raw.githubusercontent.com/freepik-company/tekton-exporter/master/docs/img/logo.png" alt="Tekton Exporter Logo (Main) logo." width="150">
-
 ![GitHub go.mod Go version (subdirectory of monorepo)](https://img.shields.io/github/go-mod/go-version/achetronic/tekton-exporter)
-![GitHub](https://img.shields.io/github/license/achetronic/tekton-exporter)
+![GitHub](https://img.shields.io/github/license/freepik-company/tekton-exporter)
 
 ![YouTube Channel Subscribers](https://img.shields.io/youtube/channel/subscribers/UCeSb3yfsPNNVr13YsYNvCAw?label=achetronic&link=http%3A%2F%2Fyoutube.com%2Fachetronic)
+![GitHub followers](https://img.shields.io/github/followers/achetronic)
 ![X (formerly Twitter) Follow](https://img.shields.io/twitter/follow/achetronic?style=flat&logo=twitter&link=https%3A%2F%2Ftwitter.com%2Fachetronic)
 
 A Prometheus Exporter to collect and expose some useful fine-grained Tekton metrics
@@ -13,7 +12,10 @@ that are not exposed natively
 
 ## Motivation
 
-TODO
+In our platform team, we needed to build some useful dashboards to show our developers the status of the pipelines
+per project to make them compete for the first position on the reliability podium.
+
+There are some metrics that are not exposed to achieve that goal, so we decided to do this little tool
 
 ## Flags
 
@@ -28,6 +30,10 @@ They are described in the following table:
 | `--metrics-port`     | Port where metrics web-server will run              |     `2112`      | `--metrics-port 9090`                                      |
 | `--metrics-host`     | Host where metrics web-server will run              |    `0.0.0.0`    | `--metrics-host 10.10.10.1`                                |
 | `--populated-labels` | Comma-separated list of labels populated on metrics |       `-`       | `--populated-labels "apiVersion,pipelineName,projectName"` |
+
+> For Prometheus SDK it is mandatory to register the metrics before using them. 
+> Due to this, if you use `--populated-labels` flag and the label is not present in some PipelineRun or TaskRun
+> the label will be populated with `#` as value
 
 ## Examples
 
