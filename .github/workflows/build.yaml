@@ -47,5 +47,4 @@ jobs:
 
       - name: Build and push
         run: |
-          IMG=ghcr.io/freepik-company/tekton-exporter:${{ inputs.release }}
-          make docker-buildx
+          IMG=ghcr.io/freepik-company/tekton-exporter:${{ inputs.release }} make docker-buildx
