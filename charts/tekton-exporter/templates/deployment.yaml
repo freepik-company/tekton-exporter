@@ -30,7 +30,7 @@ spec:
           image: "{{ .Values.controller.image.repository }}:{{ .Values.controller.image.tag | default (printf "v%s" .Chart.AppVersion) }}"
           imagePullPolicy: {{ .Values.controller.image.pullPolicy }}
           command:
-            - /manager
+            - /manager run
           args:
           - --metrics-host=0.0.0.0
           - --metrics-port=9090
