@@ -2,12 +2,16 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
 	"maps"
 	"reflect"
+	"strconv"
 	"strings"
+	"time"
 
 	// Kubernetes clients
 	// Ref: https://pkg.go.dev/k8s.io/client-go/dynamic
@@ -17,7 +21,6 @@ import (
 
 	// Kubernetes types
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 
@@ -26,6 +29,7 @@ import (
 	"tekton-exporter/internal/metrics"
 )
 
+// NewClient return a new Kubernetes Dynamic client from client-go SDK
 func NewClient() (client *dynamic.DynamicClient, err error) {
 	config, err := ctrl.GetConfig()
 	if err != nil {
@@ -41,30 +45,13 @@ func NewClient() (client *dynamic.DynamicClient, err error) {
 	return client, err
 }
 
-// GetNamespaces get a list of all namespaces existing in the cluster
-// TODO: Evaluate if this method is needed
-func GetNamespaces(ctx *context.Context, client *dynamic.DynamicClient) (namespaces *unstructured.UnstructuredList, err error) {
-
-	resourceId := schema.GroupVersionResource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "namespaces",
-	}
-
-	namespaceList, err := client.Resource(resourceId).List(*ctx, metav1.ListOptions{})
-
-	if err != nil {
-		return namespaces, err
-	}
-
-	return namespaceList, err
-}
-
 // WatchPipelineRuns TODO
+// Hey!, this function is intended to be executed as a go routine
 func WatchPipelineRuns(ctx *context.Context, client *dynamic.DynamicClient) (err error) {
 
+	commonLabels := map[string]string{}
 	populatedLabels := map[string]string{}
-	calculatedLabels := map[string]string{}
+	statusLabels := map[string]string{}
 
 	//globals.ExecContext.Logger.Info("Watching PipelineRun objects")
 	resourceId := schema.GroupVersionResource{
@@ -81,75 +68,84 @@ func WatchPipelineRuns(ctx *context.Context, client *dynamic.DynamicClient) (err
 
 	for pipelineRunEvent := range pipelineRunWatcher.ResultChan() {
 
-		// Obtain the status of 'Succeeded' condition type
-		condition, err := GetObjectCondition(&pipelineRunEvent.Object, "Succeeded")
+		// 1. Craft common labels
+		objectBasicData, err := GetObjectBasicData(&pipelineRunEvent.Object)
+		commonLabels = map[string]string{
+			"name":      objectBasicData["name"].(string),
+			"namespace": objectBasicData["namespace"].(string),
+		}
+
+		populatedLabels, _ = GetRunPopulatedLabels(ctx, &pipelineRunEvent.Object)
+		maps.Copy(commonLabels, populatedLabels)
+
+		// Conversion to a Prometheus SDK Labels type will be needed later
+		// Maps in golang are ReferenceTypes, so we need to iterate to copy
+		commonLabelsProm := prometheus.Labels{}
+		for k, v := range commonLabels {
+			commonLabelsProm[k] = v
+		}
+
+		// 2. Craft status-related labels
+		statusLabels, err = GetRunStatusLabels(&pipelineRunEvent.Object)
 		if err != nil {
 			return err
 		}
 
-		// TODO: Should we manage this or make it fail??
-		if condition == nil {
-			globals.ExecContext.Logger.Info("a PipelineRun has nil condition?")
-			condition = map[string]interface{}{
-				"type":   "Succeeded",
-				"status": "False",
-				"reason": "Unknown",
-			}
+		runStatusLabelStatusValue := 0
+		if statusLabels["status"] == "success" {
+			runStatusLabelStatusValue = 1
 		}
 
-		// Make the status label understandable on the metrics using it
-		pipelineRunStatusMetricLabelStatus := "failed"
-		pipelineRunStatusMetricLabelStatusValue := 0
-		if strings.ToLower(condition["status"].(string)) == "true" {
-			pipelineRunStatusMetricLabelStatus = "success"
-			pipelineRunStatusMetricLabelStatusValue = 1
+		// Prepare labels for '_status' metric
+		maps.Copy(statusLabels, commonLabels)
+		statusLabelMap := prometheus.Labels(statusLabels)
+
+		// 3. Craft duration-related labels
+		durationLabels, err := GetRunDurationLabels(&pipelineRunEvent.Object)
+		if err != nil {
+			return err
 		}
 
-		objectBasicData, err := GetObjectBasicData(&pipelineRunEvent.Object)
-
-		// Read labels from event's resource and merge them with
-		populatedLabels, _ = GetObjectPopulatedLabels(ctx, &pipelineRunEvent.Object)
-		calculatedLabels = map[string]string{
-			"name":   objectBasicData["name"].(string),
-			"status": pipelineRunStatusMetricLabelStatus,
-			"reason": condition["reason"].(string),
+		// Calculate duration for the Run object
+		runDurationValue := 0
+		if durationLabels["start_timestamp"] != "#" && durationLabels["completion_timestamp"] != "#" {
+			runStartTime, _ := strconv.Atoi(durationLabels["start_timestamp"])
+			runCompletionTime, _ := strconv.Atoi(durationLabels["completion_timestamp"])
+			runDurationValue = runCompletionTime - runStartTime
 		}
 
-		// Prepare labels for Promauto SDK
-		maps.Copy(populatedLabels, calculatedLabels)
-		metricsLabels := prometheus.Labels(populatedLabels)
+		// Prepare labels for '_duration' metric
+		maps.Copy(durationLabels, commonLabels)
+		durationLabelMap := prometheus.Labels(durationLabels)
+
+		///////////////////////////////////////////////////////
 
 		switch pipelineRunEvent.Type {
 		case watch.Added:
-			globals.ExecContext.Logger.With(zap.Any("labels", metricsLabels)).
+			globals.ExecContext.Logger.With(zap.Any("labels", statusLabelMap)).
 				Info("a PipelineRun resource has been created. Exposing...")
-			metrics.Pool.PipelineRunStatus.With(metricsLabels).Set(float64(pipelineRunStatusMetricLabelStatusValue))
+
+			metrics.Pool.PipelineRunStatus.With(statusLabelMap).Set(float64(runStatusLabelStatusValue))
+			metrics.Pool.PipelineRunDuration.With(durationLabelMap).Set(float64(runDurationValue))
 
 		case watch.Modified:
-			globals.ExecContext.Logger.With(zap.Any("labels", metricsLabels)).
+			globals.ExecContext.Logger.With(zap.Any("labels", statusLabelMap)).
 				Info("a PipelineRun resource has been modified. Exchanging it...")
 
-			// Generate labels that partially match
-			// Maps in golang are ReferenceTypes, so we need to iterate to copy
-			partialMetricLabels := prometheus.Labels{}
-			for k, v := range metricsLabels {
-				partialMetricLabels[k] = v
-			}
-			delete(partialMetricLabels, "status")
-			delete(partialMetricLabels, "reason")
-
-			// Delete metrics that match partial labels
-			_ = metrics.Pool.PipelineRunStatus.DeletePartialMatch(partialMetricLabels)
+			// Delete metrics that partially match labels
+			_ = metrics.Pool.PipelineRunStatus.DeletePartialMatch(commonLabelsProm)
+			_ = metrics.Pool.PipelineRunDuration.DeletePartialMatch(commonLabelsProm)
 
 			// Regenerate the metric with newer labels
-			metrics.Pool.PipelineRunStatus.With(metricsLabels).Set(float64(pipelineRunStatusMetricLabelStatusValue))
+			metrics.Pool.PipelineRunStatus.With(statusLabelMap).Set(float64(runStatusLabelStatusValue))
+			metrics.Pool.PipelineRunDuration.With(durationLabelMap).Set(float64(runDurationValue))
 
 		case watch.Deleted:
-			collectorDeleted := metrics.Pool.PipelineRunStatus.Delete(metricsLabels)
-			if collectorDeleted {
-				globals.ExecContext.Logger.With(zap.Any("labels", metricsLabels)).
-					Info("a PipelineRun resource has been deleted. Cleaning...")
-			}
+			globals.ExecContext.Logger.With(zap.Any("labels", commonLabelsProm)).
+				Info("a PipelineRun resource has been deleted. Cleaning...")
+
+			_ = metrics.Pool.PipelineRunStatus.DeletePartialMatch(commonLabelsProm)
+			_ = metrics.Pool.PipelineRunDuration.DeletePartialMatch(commonLabelsProm)
 		}
 	}
 
@@ -157,10 +153,12 @@ func WatchPipelineRuns(ctx *context.Context, client *dynamic.DynamicClient) (err
 }
 
 // WatchTaskRuns TODO
+// Hey!, this function is intended to be executed as a go routine
 func WatchTaskRuns(ctx *context.Context, client *dynamic.DynamicClient) (err error) {
 
+	commonLabels := map[string]string{}
 	populatedLabels := map[string]string{}
-	calculatedLabels := map[string]string{}
+	statusLabels := map[string]string{}
 
 	//globals.ExecContext.Logger.Info("Watching PipelineRun objects")
 	resourceId := schema.GroupVersionResource{
@@ -177,103 +175,93 @@ func WatchTaskRuns(ctx *context.Context, client *dynamic.DynamicClient) (err err
 
 	for taskRunEvent := range taskRunWatcher.ResultChan() {
 
-		// Obtain the status of 'Succeeded' condition type
-		condition, err := GetObjectCondition(&taskRunEvent.Object, "Succeeded")
+		// 1. Craft common labels
+		objectBasicData, err := GetObjectBasicData(&taskRunEvent.Object)
+		commonLabels = map[string]string{
+			"name":      objectBasicData["name"].(string),
+			"namespace": objectBasicData["namespace"].(string),
+		}
+
+		populatedLabels, _ = GetRunPopulatedLabels(ctx, &taskRunEvent.Object)
+		maps.Copy(commonLabels, populatedLabels)
+
+		// Conversion to a Prometheus SDK Labels type will be needed later
+		// Maps in golang are ReferenceTypes, so we need to iterate to copy
+		commonLabelsProm := prometheus.Labels{}
+		for k, v := range commonLabels {
+			commonLabelsProm[k] = v
+		}
+
+		// 2. Craft status-related labels
+		statusLabels, err = GetRunStatusLabels(&taskRunEvent.Object)
 		if err != nil {
 			return err
 		}
 
-		// Make the status label understandable on the metrics using it
-		taskRunStatusMetricLabelStatus := "failed"
-		taskRunStatusMetricLabelStatusValue := 0
-		if strings.ToLower(condition["status"].(string)) == "true" {
-			taskRunStatusMetricLabelStatus = "success"
-			taskRunStatusMetricLabelStatusValue = 1
+		runStatusLabelStatusValue := 0
+		if statusLabels["status"] == "success" {
+			runStatusLabelStatusValue = 1
 		}
 
-		objectBasicData, err := GetObjectBasicData(&taskRunEvent.Object)
+		// Prepare labels for '_status' metric
+		maps.Copy(statusLabels, commonLabels)
+		statusLabelMap := prometheus.Labels(statusLabels)
 
-		// Read labels from event's resource and merge them with
-		populatedLabels, _ = GetObjectPopulatedLabels(ctx, &taskRunEvent.Object)
-		calculatedLabels = map[string]string{
-			"name":   objectBasicData["name"].(string),
-			"status": taskRunStatusMetricLabelStatus,
-			"reason": condition["reason"].(string),
+		// 3. Craft duration-related labels
+		durationLabels, err := GetRunDurationLabels(&taskRunEvent.Object)
+		if err != nil {
+			return err
 		}
 
-		// Prepare labels for Promauto SDK
-		maps.Copy(populatedLabels, calculatedLabels)
-		metricsLabels := prometheus.Labels(populatedLabels)
+		// Calculate duration for the Run object
+		runDurationValue := 0
+		if durationLabels["start_timestamp"] != "#" && durationLabels["completion_timestamp"] != "#" {
+			runStartTime, _ := strconv.Atoi(durationLabels["start_timestamp"])
+			runCompletionTime, _ := strconv.Atoi(durationLabels["completion_timestamp"])
+			runDurationValue = runCompletionTime - runStartTime
+		}
+
+		// Prepare labels for '_duration' metric
+		maps.Copy(durationLabels, commonLabels)
+		durationLabelMap := prometheus.Labels(durationLabels)
+
+		///////
 
 		switch taskRunEvent.Type {
 		case watch.Added:
-			globals.ExecContext.Logger.With(zap.Any("labels", metricsLabels)).
+			globals.ExecContext.Logger.With(zap.Any("labels", statusLabelMap)).
 				Info("a TaskRun resource has been created. Exposing...")
-			metrics.Pool.TaskRunStatus.With(metricsLabels).Set(float64(taskRunStatusMetricLabelStatusValue))
+
+			metrics.Pool.TaskRunStatus.With(statusLabelMap).Set(float64(runStatusLabelStatusValue))
+			metrics.Pool.TaskRunDuration.With(durationLabelMap).Set(float64(runDurationValue))
 
 		case watch.Modified:
-			globals.ExecContext.Logger.With(zap.Any("labels", metricsLabels)).
+			globals.ExecContext.Logger.With(zap.Any("labels", statusLabelMap)).
 				Info("a TaskRun resource has been modified. Exchanging it...")
 
-			// Generate labels that partially match
-			// Maps in golang are ReferenceTypes, so we need to iterate to copy
-			partialMetricLabels := prometheus.Labels{}
-			for k, v := range metricsLabels {
-				partialMetricLabels[k] = v
-			}
-			delete(partialMetricLabels, "status")
-			delete(partialMetricLabels, "reason")
-
-			// Delete metrics that match partial labels
-			_ = metrics.Pool.TaskRunStatus.DeletePartialMatch(partialMetricLabels)
+			// Delete metrics that partially match labels
+			_ = metrics.Pool.TaskRunStatus.DeletePartialMatch(commonLabelsProm)
+			_ = metrics.Pool.TaskRunDuration.DeletePartialMatch(commonLabelsProm)
 
 			// Regenerate the metric with newer labels
-			metrics.Pool.TaskRunStatus.With(metricsLabels).Set(float64(taskRunStatusMetricLabelStatusValue))
+			metrics.Pool.TaskRunStatus.With(statusLabelMap).Set(float64(runStatusLabelStatusValue))
+			metrics.Pool.TaskRunDuration.With(durationLabelMap).Set(float64(runDurationValue))
 
 		case watch.Deleted:
-			collectorDeleted := metrics.Pool.TaskRunStatus.Delete(metricsLabels)
-			if collectorDeleted {
-				globals.ExecContext.Logger.With(zap.Any("labels", metricsLabels)).
-					Info("a TaskRun resource has been deleted. Cleaning...")
-			}
+			globals.ExecContext.Logger.With(zap.Any("labels", commonLabelsProm)).
+				Info("a TaskRun resource has been deleted. Cleaning...")
+
+			_ = metrics.Pool.TaskRunStatus.DeletePartialMatch(commonLabelsProm)
+			_ = metrics.Pool.TaskRunDuration.DeletePartialMatch(commonLabelsProm)
 		}
 	}
 
 	return nil
 }
 
-// GetObjectLabels return all the labels from an object of type runtime.Object
-func GetObjectLabels(obj *runtime.Object) (labelsMap map[string]string, err error) {
-
-	// Convert the runtime.Object to unstructured.Unstructured for convenience
-	pipelineRunObject, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
-	if err != nil {
-		return labelsMap, err
-	}
-
-	// Read labels from event's resource
-	objectMetadata := pipelineRunObject["metadata"]
-	objectLabelsOriginal := objectMetadata.(map[string]interface{})["labels"]
-	objectLabels := objectLabelsOriginal.(map[string]interface{})
-
-	labelsMap = make(map[string]string)
-
-	// Iterate over the original map and cast its values
-	for key, value := range objectLabels {
-		strValue, ok := value.(string)
-		if !ok {
-			globals.ExecContext.Logger.Infof("Value of label '%s' is not a string. Ignoring it", key)
-			continue
-		}
-		labelsMap[key] = strValue
-	}
-
-	return labelsMap, err
-}
-
-// GetObjectPopulatedLabels return only user's desired labels from an object of type runtime.Object
+// GetRunPopulatedLabels return only user's desired labels from an object of type runtime.Object
 // Desired labels are defined by flag "--populated-labels"
-func GetObjectPopulatedLabels(ctx *context.Context, object *runtime.Object) (labelsMap map[string]string, err error) {
+func GetRunPopulatedLabels(ctx *context.Context, object *runtime.Object) (labelsMap map[string]string, err error) {
 
 	// Read labels from event's resource
 	objectLabels, err := GetObjectLabels(object)
@@ -308,52 +296,85 @@ func GetObjectPopulatedLabels(ctx *context.Context, object *runtime.Object) (lab
 	return populatedLabels, nil
 }
 
-// GetObjectCondition return selected condition type from an object of type runtime.Object
-func GetObjectCondition(obj *runtime.Object, conditionType string) (condition map[string]interface{}, err error) {
+// GetRunStatusLabels obtains the status-related labels for a pipeline based on the 'Succeeded' condition type and
+// returns a map containing the 'status' and 'reason' labels.
+// If the 'Succeeded' condition is not found, it populates a default condition with status 'False' and reason 'Unknown'.
+func GetRunStatusLabels(object *runtime.Object) (labelsMap map[string]string, err error) {
 
-	// Convert the runtime.Object to unstructured.Unstructured for convenience
-	pipelineRunObject, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+	// Obtain the status of 'Succeeded' condition type
+	condition, err := GetObjectCondition(object, "Succeeded")
 	if err != nil {
-		return condition, err
+		return labelsMap, err
 	}
 
-	if reflect.TypeOf(pipelineRunObject["status"]) == nil {
-		return condition, nil
-	}
-
-	prObjectStatus := pipelineRunObject["status"].(map[string]interface{})
-	if reflect.TypeOf(prObjectStatus["conditions"]) == nil {
-		return condition, nil
-	}
-
-	//
-	prObjectStatusConditions := prObjectStatus["conditions"].([]interface{})
-	for _, currentCondition := range prObjectStatusConditions {
-		currentConditionMap := currentCondition.(map[string]interface{})
-
-		if currentConditionMap["type"] == conditionType {
-			condition = currentConditionMap
-			break
+	// TODO: Should we manage this or make it fail??
+	if condition == nil {
+		condition = map[string]interface{}{
+			"type":   "Succeeded",
+			"status": "False",
+			"reason": "Unknown",
 		}
 	}
 
-	return condition, nil
-}
-
-// GetObjectBasicData return basic data (name, namespace) from an object of type runtime.Object
-func GetObjectBasicData(obj *runtime.Object) (objectData map[string]interface{}, err error) {
-
-	// Convert the runtime.Object to unstructured.Unstructured for convenience
-	pipelineRunObject, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
-	if err != nil {
-		return objectData, err
+	// Make the 'status' label understandable in metrics that are using it
+	runStatusLabelStatus := "failed"
+	if strings.ToLower(condition["status"].(string)) == "true" {
+		runStatusLabelStatus = "success"
 	}
 
-	objectData = make(map[string]interface{})
+	statusLabels := map[string]string{
+		"status": runStatusLabelStatus,
+		"reason": condition["reason"].(string),
+	}
 
-	objectMetadata := pipelineRunObject["metadata"]
-	objectData["name"] = objectMetadata.(map[string]interface{})["name"]
-	objectData["namespace"] = objectMetadata.(map[string]interface{})["namespace"]
+	return statusLabels, nil
+}
 
-	return objectData, nil
+// GetRunDurationLabels return a map with 'start_timestamp' and 'completion_timestamp'
+// from the object representing a run's status.
+// If any timestamp is missing, it populates a default value set to '#'
+func GetRunDurationLabels(object *runtime.Object) (labelsMap map[string]string, err error) {
+
+	// Obtain the status of 'Succeeded' condition type
+	status, err := GetObjectStatus(object)
+	if err != nil {
+		return labelsMap, err
+	}
+
+	// TODO: Should we manage this or make it fail??
+	if status == nil {
+		return labelsMap, nil
+	}
+
+	// TODO
+	timestampLabels := map[string]string{
+		"start_timestamp":      "#",
+		"completion_timestamp": "#",
+	}
+
+	// Check whether we have start time
+	if reflect.TypeOf(status["startTime"]) != nil {
+		// TODO: Extract DateToTimestamp code to a function
+		// Tekton uses RFC3339 for dates. Convert it to timestamp
+		parsedTime, err := time.Parse(time.RFC3339, status["startTime"].(string))
+		if err != nil {
+			return labelsMap, errors.New(fmt.Sprintf("impossible to parse timestamp: %s", err))
+		}
+
+		timestampLabels["start_timestamp"] = strconv.Itoa(int(parsedTime.Unix()))
+	}
+
+	// Check whether we have completion time
+	if reflect.TypeOf(status["completionTime"]) != nil {
+		// TODO: Extract DateToTimestamp code to a function
+		// Tekton uses RFC3339 for dates. Convert it to timestamp
+		parsedTime, err := time.Parse(time.RFC3339, status["completionTime"].(string))
+		if err != nil {
+			return labelsMap, errors.New(fmt.Sprintf("impossible to parse timestamp: %s", err))
+		}
+
+		timestampLabels["completion_timestamp"] = strconv.Itoa(int(parsedTime.Unix()))
+	}
+
+	return timestampLabels, nil
 }

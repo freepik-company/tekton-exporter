@@ -67,6 +67,18 @@ related to this repository
 > Do you need it in a different container registry? We think this is not needed, but if we're wrong, please, let's discuss
 > it in the best place for that: an issue
 
+## Exposed metrics
+
+This project is about exposing useful metrics related to the status of the Pipelines and Tasks, so, what about them?
+
+
+| Name                                           | Description                     |                         Metric labels                          |
+|:-----------------------------------------------|:--------------------------------|:--------------------------------------------------------------:|
+| `tekton_exporter_pipelinerun_status`           | Status of a PipelineRun         |            `name`, `namespace`, `status`, `reason`             | 
+| `tekton_exporter_taskrun_status`               | Status of a TaskRun             |            `name`, `namespace`, `status`, `reason`             | 
+| `tekton_exporter_pipelinerun_duration_seconds` | Seconds lasted by a PipelineRun | `name`, `namespace`, `start_timestamp`, `completion_timestamp` | 
+| `tekton_exporter_taskrun_duration_seconds`     | Seconds lasted by a TaskRun     | `name`, `namespace`, `start_timestamp`, `completion_timestamp` | 
+
 ## How to contribute
 
 We are open to external collaborations for this project: improvements, bugfixes, whatever.
