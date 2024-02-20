@@ -21,6 +21,8 @@ var (
 // whose keys are the input labels, and the values are the same labels with a Prometheus-ready syntax
 func GetProcessedLabels(labelNames []string) (promLabelNames map[string]string, err error) {
 
+	promLabelNames = make(map[string]string)
+
 	// Make a regex to say we only want lower + uppercase letters, numbers and underscore
 	reg, err := regexp.Compile("[^a-zA-Z0-9]+")
 	if err != nil {

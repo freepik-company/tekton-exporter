@@ -29,6 +29,8 @@ func GetObjectBasicData(obj *runtime.Object) (objectData map[string]interface{},
 // GetObjectLabels return all the labels from an object of type runtime.Object
 func GetObjectLabels(obj *runtime.Object) (labelsMap map[string]string, err error) {
 
+	labelsMap = make(map[string]string)
+
 	// Convert the runtime.Object to unstructured.Unstructured for convenience
 	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
 	if err != nil {
@@ -44,8 +46,6 @@ func GetObjectLabels(obj *runtime.Object) (labelsMap map[string]string, err erro
 		return labelsMap, nil
 	}
 	objectLabels := objectLabelsOriginal.(map[string]interface{})
-
-	labelsMap = make(map[string]string)
 
 	// Iterate over the original map and cast its values
 	for key, value := range objectLabels {
