@@ -2,8 +2,10 @@ apiVersion: v2
 name: tekton-exporter
 type: application
 description: A Helm chart to deploy Tekton Exporter into a Kubernetes cluster
-version: 0.2.0
-appVersion: "0.2.0"
+
+version: 0.2.1
+appVersion: 0.2.1
+
 kubeVersion: ">=1.22.0-0"
 home: https://github.com/prosimcorp/helm-charts
 sources:
