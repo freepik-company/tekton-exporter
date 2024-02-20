@@ -36,8 +36,13 @@ func GetObjectLabels(obj *runtime.Object) (labelsMap map[string]string, err erro
 	}
 
 	// Read labels from event's resource
-	objectMetadata := object["metadata"]
-	objectLabelsOriginal := objectMetadata.(map[string]interface{})["labels"]
+	objectMetadata := object["metadata"].(map[string]interface{})
+
+	// If there is no label, just quit
+	objectLabelsOriginal := objectMetadata["labels"]
+	if reflect.TypeOf(objectLabelsOriginal) == nil {
+		return labelsMap, nil
+	}
 	objectLabels := objectLabelsOriginal.(map[string]interface{})
 
 	labelsMap = make(map[string]string)

@@ -29,6 +29,31 @@ import (
 	"tekton-exporter/internal/metrics"
 )
 
+const (
+	watchPipelinerunMessage = "Watching PipelineRun objects"
+	watchTaskrunMessage     = "Watching TaskRun objects"
+
+	//
+	objectBasicDataRetrievalError      = "impossible to retrieve name or namespace from object. skipping object: %s"
+	populatedPromLabelsRetrievalError  = "impossible to get populated metrics labels from object. skipping object: %s"
+	statusPromLabelsRetrievalError     = "impossible to get status metrics labels from object. skipping object: %s"
+	timestampsPromLabelsRetrievalError = "impossible to get timestamps metrics labels from object. skipping object: %s"
+)
+
+var (
+	pipelineRunV1GVR = schema.GroupVersionResource{
+		Group:    "tekton.dev",
+		Version:  "v1",
+		Resource: "pipelineruns",
+	}
+
+	taskRunV1GVR = schema.GroupVersionResource{
+		Group:    "tekton.dev",
+		Version:  "v1",
+		Resource: "taskruns",
+	}
+)
+
 // NewClient return a new Kubernetes Dynamic client from client-go SDK
 func NewClient() (client *dynamic.DynamicClient, err error) {
 	config, err := ctrl.GetConfig()
@@ -49,19 +74,14 @@ func NewClient() (client *dynamic.DynamicClient, err error) {
 // Hey!, this function is intended to be executed as a go routine
 func WatchPipelineRuns(ctx *context.Context, client *dynamic.DynamicClient) (err error) {
 
+	globals.ExecContext.Logger.Info(watchPipelinerunMessage)
+
 	commonLabels := map[string]string{}
 	populatedLabels := map[string]string{}
 	statusLabels := map[string]string{}
 
-	//globals.ExecContext.Logger.Info("Watching PipelineRun objects")
-	resourceId := schema.GroupVersionResource{
-		Group:    "tekton.dev",
-		Version:  "v1",
-		Resource: "pipelineruns",
-	}
-
 	// TODO
-	pipelineRunWatcher, err := client.Resource(resourceId).Watch(*ctx, metav1.ListOptions{})
+	pipelineRunWatcher, err := client.Resource(pipelineRunV1GVR).Watch(*ctx, metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -70,12 +90,21 @@ func WatchPipelineRuns(ctx *context.Context, client *dynamic.DynamicClient) (err
 
 		// 1. Craft common labels
 		objectBasicData, err := GetObjectBasicData(&pipelineRunEvent.Object)
+		if err != nil {
+			globals.ExecContext.Logger.Infof(objectBasicDataRetrievalError, err)
+			continue
+		}
 		commonLabels = map[string]string{
 			"name":      objectBasicData["name"].(string),
 			"namespace": objectBasicData["namespace"].(string),
 		}
 
-		populatedLabels, _ = GetRunPopulatedLabels(ctx, &pipelineRunEvent.Object)
+		populatedLabels, err = GetRunPopulatedPromLabels(ctx, &pipelineRunEvent.Object)
+		if err != nil {
+			globals.ExecContext.Logger.Infof(populatedPromLabelsRetrievalError, err)
+			continue
+		}
+		//log.Printf("TODO PR (populated labels): %v", populatedLabels)
 		maps.Copy(commonLabels, populatedLabels)
 
 		// Conversion to a Prometheus SDK Labels type will be needed later
@@ -86,9 +115,10 @@ func WatchPipelineRuns(ctx *context.Context, client *dynamic.DynamicClient) (err
 		}
 
 		// 2. Craft status-related labels
-		statusLabels, err = GetRunStatusLabels(&pipelineRunEvent.Object)
+		statusLabels, err = GetRunStatusPromLabels(&pipelineRunEvent.Object)
 		if err != nil {
-			return err
+			globals.ExecContext.Logger.Infof(statusPromLabelsRetrievalError, err)
+			continue
 		}
 
 		runStatusLabelStatusValue := 0
@@ -101,9 +131,10 @@ func WatchPipelineRuns(ctx *context.Context, client *dynamic.DynamicClient) (err
 		statusLabelMap := prometheus.Labels(statusLabels)
 
 		// 3. Craft duration-related labels
-		durationLabels, err := GetRunDurationLabels(&pipelineRunEvent.Object)
+		durationLabels, err := GetRunDurationPromLabels(&pipelineRunEvent.Object)
 		if err != nil {
-			return err
+			globals.ExecContext.Logger.Infof(timestampsPromLabelsRetrievalError, err)
+			continue
 		}
 
 		// Calculate duration for the Run object
@@ -156,19 +187,13 @@ func WatchPipelineRuns(ctx *context.Context, client *dynamic.DynamicClient) (err
 // Hey!, this function is intended to be executed as a go routine
 func WatchTaskRuns(ctx *context.Context, client *dynamic.DynamicClient) (err error) {
 
+	globals.ExecContext.Logger.Info(watchTaskrunMessage)
+
 	commonLabels := map[string]string{}
 	populatedLabels := map[string]string{}
 	statusLabels := map[string]string{}
 
-	//globals.ExecContext.Logger.Info("Watching PipelineRun objects")
-	resourceId := schema.GroupVersionResource{
-		Group:    "tekton.dev",
-		Version:  "v1",
-		Resource: "taskruns",
-	}
-
-	// TODO: Delete the namespace once the controller is fully working
-	taskRunWatcher, err := client.Resource(resourceId).Namespace("freeclip").Watch(*ctx, metav1.ListOptions{})
+	taskRunWatcher, err := client.Resource(taskRunV1GVR).Watch(*ctx, metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -177,12 +202,21 @@ func WatchTaskRuns(ctx *context.Context, client *dynamic.DynamicClient) (err err
 
 		// 1. Craft common labels
 		objectBasicData, err := GetObjectBasicData(&taskRunEvent.Object)
+		if err != nil {
+			globals.ExecContext.Logger.Infof(objectBasicDataRetrievalError, err)
+			continue
+		}
 		commonLabels = map[string]string{
 			"name":      objectBasicData["name"].(string),
 			"namespace": objectBasicData["namespace"].(string),
 		}
 
-		populatedLabels, _ = GetRunPopulatedLabels(ctx, &taskRunEvent.Object)
+		populatedLabels, _ = GetRunPopulatedPromLabels(ctx, &taskRunEvent.Object)
+		if err != nil {
+			globals.ExecContext.Logger.Infof(populatedPromLabelsRetrievalError, err)
+			continue
+		}
+		//log.Printf("TODO TR (populated labels): %v", populatedLabels)
 		maps.Copy(commonLabels, populatedLabels)
 
 		// Conversion to a Prometheus SDK Labels type will be needed later
@@ -193,9 +227,10 @@ func WatchTaskRuns(ctx *context.Context, client *dynamic.DynamicClient) (err err
 		}
 
 		// 2. Craft status-related labels
-		statusLabels, err = GetRunStatusLabels(&taskRunEvent.Object)
+		statusLabels, err = GetRunStatusPromLabels(&taskRunEvent.Object)
 		if err != nil {
-			return err
+			globals.ExecContext.Logger.Infof(statusPromLabelsRetrievalError, err)
+			continue
 		}
 
 		runStatusLabelStatusValue := 0
@@ -208,9 +243,10 @@ func WatchTaskRuns(ctx *context.Context, client *dynamic.DynamicClient) (err err
 		statusLabelMap := prometheus.Labels(statusLabels)
 
 		// 3. Craft duration-related labels
-		durationLabels, err := GetRunDurationLabels(&taskRunEvent.Object)
+		durationLabels, err := GetRunDurationPromLabels(&taskRunEvent.Object)
 		if err != nil {
-			return err
+			globals.ExecContext.Logger.Infof(timestampsPromLabelsRetrievalError, err)
+			continue
 		}
 
 		// Calculate duration for the Run object
@@ -222,6 +258,8 @@ func WatchTaskRuns(ctx *context.Context, client *dynamic.DynamicClient) (err err
 		}
 
 		// Prepare labels for '_duration' metric
+		//log.Printf("TODO TR (duration labels): %v", durationLabels)
+		//log.Printf("TODO TR (common labels): %v", commonLabels)
 		maps.Copy(durationLabels, commonLabels)
 		durationLabelMap := prometheus.Labels(durationLabels)
 
@@ -259,9 +297,9 @@ func WatchTaskRuns(ctx *context.Context, client *dynamic.DynamicClient) (err err
 	return nil
 }
 
-// GetRunPopulatedLabels return only user's desired labels from an object of type runtime.Object
+// GetRunPopulatedPromLabels return only user's desired labels from an object of type runtime.Object
 // Desired labels are defined by flag "--populated-labels"
-func GetRunPopulatedLabels(ctx *context.Context, object *runtime.Object) (labelsMap map[string]string, err error) {
+func GetRunPopulatedPromLabels(ctx *context.Context, object *runtime.Object) (labelsMap map[string]string, err error) {
 
 	// Read labels from event's resource
 	objectLabels, err := GetObjectLabels(object)
@@ -296,10 +334,10 @@ func GetRunPopulatedLabels(ctx *context.Context, object *runtime.Object) (labels
 	return populatedLabels, nil
 }
 
-// GetRunStatusLabels obtains the status-related labels for a pipeline based on the 'Succeeded' condition type and
+// GetRunStatusPromLabels obtains the status-related labels for a pipeline based on the 'Succeeded' condition type and
 // returns a map containing the 'status' and 'reason' labels.
 // If the 'Succeeded' condition is not found, it populates a default condition with status 'False' and reason 'Unknown'.
-func GetRunStatusLabels(object *runtime.Object) (labelsMap map[string]string, err error) {
+func GetRunStatusPromLabels(object *runtime.Object) (labelsMap map[string]string, err error) {
 
 	// Obtain the status of 'Succeeded' condition type
 	condition, err := GetObjectCondition(object, "Succeeded")
@@ -330,10 +368,10 @@ func GetRunStatusLabels(object *runtime.Object) (labelsMap map[string]string, er
 	return statusLabels, nil
 }
 
-// GetRunDurationLabels return a map with 'start_timestamp' and 'completion_timestamp'
+// GetRunDurationPromLabels return a map with 'start_timestamp' and 'completion_timestamp'
 // from the object representing a run's status.
 // If any timestamp is missing, it populates a default value set to '#'
-func GetRunDurationLabels(object *runtime.Object) (labelsMap map[string]string, err error) {
+func GetRunDurationPromLabels(object *runtime.Object) (labelsMap map[string]string, err error) {
 
 	// Obtain the status of 'Succeeded' condition type
 	status, err := GetObjectStatus(object)
