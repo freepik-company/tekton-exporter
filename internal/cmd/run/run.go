@@ -107,20 +107,26 @@ func RunCommand(cmd *cobra.Command, args []string) {
 	client, err := kubernetes.NewClient()
 
 	// Process PipelineRun resources in the background
-	// TODO: Errors for watcher must be shown inside the watcher as this is a goroutine
+	// Hey!, errors for watcher must be shown inside the watcher as this is a goroutine
 	go func() {
-		err := kubernetes.WatchPipelineRuns(&globals.ExecContext.Context, client)
-		if err != nil {
-
+		// Following loop grants re-launching the goroutine when it fails
+		for {
+			err := kubernetes.WatchPipelineRuns(&globals.ExecContext.Context, client)
+			if err != nil {
+				globals.ExecContext.Logger.Errorf("error on PipelineRun objects watcher: %s", err)
+			}
 		}
 	}()
 
 	// Process TaskRun resources in the background
-	// TODO: Errors for watcher must be shown inside the watcher as this is a goroutine
+	// Hey, errors for watcher must be shown inside the watcher as this is a goroutine
 	go func() {
-		err := kubernetes.WatchTaskRuns(&globals.ExecContext.Context, client)
-		if err != nil {
-
+		// Following loop grants re-launching the goroutine when it fails
+		for {
+			err := kubernetes.WatchTaskRuns(&globals.ExecContext.Context, client)
+			if err != nil {
+				globals.ExecContext.Logger.Errorf("error on TaskRun objects watcher: %s", err)
+			}
 		}
 	}()
 
