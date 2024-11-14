@@ -1,0 +1,29 @@
+apiVersion: v1
+entries:
+  tekton-exporter:
+  - apiVersion: v2
+    appVersion: 0.3.0
+    created: "2024-11-14T10:54:31.853632197Z"
+    description: A Helm chart to deploy Tekton Exporter into a Kubernetes cluster
+    digest: 6aec83b779c987484715fb8b57111f5391e55e649bacd1c71c7c0a2983efe029
+    home: https://github.com/prosimcorp/helm-charts
+    keywords:
+    - freepik
+    - freepik-company
+    - tekton-exporter
+    - tekton
+    - prometheus
+    kubeVersion: '>=1.22.0-0'
+    maintainers:
+    - name: freepik-company
+      url: https://github.com/freepik-company/tekton-exporter
+    - email: ahernandez@freepik.com
+      name: Alby Hernández
+    name: tekton-exporter
+    sources:
+    - https://github.com/freepik-company/tekton-exporter
+    type: application
+    urls:
+    - tekton-exporter-0.3.0.tgz
+    version: 0.3.0
+generated: "2024-11-14T10:54:31.853637917Z"
