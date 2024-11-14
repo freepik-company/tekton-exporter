@@ -15,7 +15,7 @@ that are not exposed natively
 In our platform team, we needed to build some useful dashboards to show our developers the status of the pipelines
 per project to make them compete for the first position on the reliability podium.
 
-There are some metrics that are not exposed, which are necessary to achieve our goal, 
+There are some metrics that are not exposed, which are necessary to achieve our goal,
 so we decided to create this small tool.
 
 ## Flags
@@ -27,12 +27,12 @@ They are described in the following table:
 |:---------------------|:------------------------------------------------------------------------|:---------------:|------------------------------------------------------------|
 | `--log-level`        | Define the verbosity of the logs                                        |     `info`      | `--log-level info`                                         |
 | `--disable-trace`    | Disable traces from logs                                                |     `false`     | `--disable-trace true`                                     |
-| `--kubeconfig`       | Path to kubeconfig                                                      |       `-`       | `--kubeconfig="~/.kube/config"`                            |   
+| `--kubeconfig`       | Path to kubeconfig                                                      |       `-`       | `--kubeconfig="~/.kube/config"`                            |
 | `--metrics-port`     | Port where metrics web-server will run                                  |     `2112`      | `--metrics-port 9090`                                      |
 | `--metrics-host`     | Host where metrics web-server will run                                  |    `0.0.0.0`    | `--metrics-host 10.10.10.1`                                |
 | `--populated-labels` | (Repeatable or comma-separated list) Object labels populated on metrics |       `-`       | `--populated-labels "apiVersion,pipelineName,projectName"` |
 
-> For Prometheus SDK, it is mandatory to register the metrics before using them. 
+> For Prometheus SDK, it is mandatory to register the metrics before using them.
 > Due to this, if you use `--populated-labels` flag and the label is not present in some PipelineRun or TaskRun
 > the label will be populated with `#` as value
 
@@ -74,10 +74,18 @@ This project is about exposing useful metrics related to the status of the Pipel
 
 | Name                                           | Description                     |                         Metric labels                          |
 |:-----------------------------------------------|:--------------------------------|:--------------------------------------------------------------:|
-| `tekton_exporter_pipelinerun_status`           | Status of a PipelineRun         |            `name`, `namespace`, `status`, `reason`             | 
-| `tekton_exporter_taskrun_status`               | Status of a TaskRun             |            `name`, `namespace`, `status`, `reason`             | 
-| `tekton_exporter_pipelinerun_duration_seconds` | Seconds lasted by a PipelineRun | `name`, `namespace`, `start_timestamp`, `completion_timestamp` | 
-| `tekton_exporter_taskrun_duration_seconds`     | Seconds lasted by a TaskRun     | `name`, `namespace`, `start_timestamp`, `completion_timestamp` | 
+| `tekton_exporter_pipelinerun_status`           | Status of a PipelineRun         |            `name`, `namespace`, `status`, `reason`             |
+| `tekton_exporter_taskrun_status`               | Status of a TaskRun             |            `name`, `namespace`, `status`, `reason`             |
+| `tekton_exporter_pipelinerun_duration_seconds` | Seconds lasted by a PipelineRun | `name`, `namespace`, `start_timestamp`, `completion_timestamp` |
+| `tekton_exporter_taskrun_duration_seconds`     | Seconds lasted by a TaskRun     | `name`, `namespace`, `start_timestamp`, `completion_timestamp` |
+
+## Deployment
+
+We have designed the deployment of this project to allow remote deployment using Helm. This way it is possible
+to use it with a GitOps approach, using tools such as ArgoCD or FluxCD.
+
+
+> 🧚🏼 **Hey, listen! Go to the [Helm registry](https://freepik-company.github.io/tekton-exporter/)**
 
 ## How to contribute
 
